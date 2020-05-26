@@ -3,13 +3,17 @@
 
 """
 Saves as ASCII, all values in Jy/count:         Freq (MHz)         AA          BB         CR         CI
+
+STILL UNDER CONSTRUCTION
 """
 
 import sys
 import os
 import numpy as np
 import flux
+import u
 
+from pypulse.archive import Archive
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 import astropy.units as unit
@@ -18,139 +22,157 @@ format = 2
 
 class Cal():
 
-    def __init__( self, file, cont_name, cont_fits_dir = None, verbose = False, **kwargs ):
+    def __init__( self, file, cont_name, cont_fits_dir, verbose = False ):
         self.file = file
         self.cont_name = cont_name
+        self.cont_fits_dir = cont_fits_dir
         self.verbose = verbose
         self.ar = Archive( file, prepare = False, verbose = False )
-        self.ar.dedisperse( wcfreq = self.ar.wcfreq )
-        self.ar.center()
+        self.mjd = self.ar.getMJD()
+        self.fe = self.ar.getFrontend()
+        #self.ar.dedisperse( wcfreq = self.ar.wcfreq )
+        #self.ar.center()
+        #self.jy_per_count = self.jpc( **kwargs )
 
 
-    def get_onoff_list( self, tolerance = 1 ):
+    def get_onoff_data( self, tolerance = 1 ):
 
         try:
-            on, off = np.loadtxt( "logs/on_off.log" )
-        except Exception:
-            on, off = [], []
+            dat = np.genfromtxt( "logs/on_off.log", dtype = 'str' )
+            on, off, frontend, date, n = dat[:, 0], dat[:, 1], dat[:, 2], dat[:, 3], dat[:, 4]
+        except OSError:
+            on, off, frontend, date, n = [], [], [], [], []
+            l = []
 
             # Get accurate co-ordinates for source
             pos, params = flux.find_source_params_f2( self.cont_name )
             m_coordinates = SkyCoord( f"{pos[0]} {pos[1]}", unit = ( unit.hourangle, unit.degree ) )
 
-            for f in sorted( os.listdir( self.cont_dir ) ):
-                continuum_file = os.path.join( self.cont_dir, f )
-
+            for f in sorted( os.listdir( self.cont_fits_dir ) ):
+                continuum_file = os.path.join( self.cont_fits_dir, f )
                 try:
-                    hdul, mjd, fe, cont_ra, cont_dec, obs_mode = u.find_fe_mjd_ra_dec( continuum_file )
+                    fe, mjd, cont_ra, cont_dec = u.find_fe_mjd_ra_dec( continuum_file, "CAL" )
                 except Exception:
                     continue
 
-                # Get co-ordinates in FITS file
+                obs_num = continuum_file[-9:-5]
+
+                # Get co-ordinates from FITS file in correct units
                 coords = SkyCoord( f"{cont_ra} {cont_dec}", unit = ( unit.hourangle, unit.degree ) )
 
-                onoff_list.append( { 'MJD' : mjd, 'ON' : None, 'OFF' : None, 'FE' : fe, 'NUM' : obs_num } )
+                # Enter bizarre Henryk mind space (but tell me it doesn't work)
+                l.append( { 'MJD' : mjd, 'ON' : None, 'OFF' : None, 'FE' : fe, 'NUM' : obs_num } )
 
-                # Determine if co-ordinates signify ON or OFF source observation
+                # Determine if co-ordinates signify ON or OFF source observation. Tolerance in arcminutes.
                 if m_coordinates.separation( coords ) <= ( tolerance * unit.arcmin ):
                     mode = 'ON'
                 else:
                     mode = 'OFF'
 
-                for dict in onoff_list:
+                # Set the filename to the correct flag in the dictionary
+                for dict in l:
                     if (dict[ 'MJD' ] == mjd) and (dict[ 'FE' ] == fe) and (dict[ 'NUM' ] == obs_num) and (dict[ mode ] is None):
-                        dict[ mode ] = file
+                        dict[ mode ] = f
 
-            for dict in reversed( onoff_list ):
+            # Delete the excess rows that got created
+            for dict in reversed( l ):
                 if (dict[ 'ON' ] is None) or (dict[ 'OFF' ] is None):
-                    onoff_list.remove( dict )
+                    l.remove( dict )
+
+            for d in l:
+                on.append( d[ 'ON' ] )
+                off.append( d[ 'OFF' ] )
+                frontend.append( d[ 'FE' ] )
+                date.append( d[ 'MJD' ] )
+                n.append( d[ 'NUM' ] )
 
             if self.verbose:
-                print( "Saving as {}".format( dict_file ) )
+                print( "Saving to logs/on_off.log" )
 
-            pickle_out = open( abs_dict_file, "wb" )
-            pickle.dump( onoff_list, pickle_out )
-            pickle_out.close()
+            with open( "logs/on_off.log", "w" ) as f:
+                data = np.array( [ on, off, frontend, date, n ] ).T
+                np.savetxt( f, data, fmt="%s" )
 
-        # Returns
-        return on, off
+        # Returns everything as iterables
+        return on, off, frontend, date, n
 
-    def get_closest_contfile( self, mjd_tol = 50 ):
+    def closest_continuum2psrcal( self, mjd_tol = 50 ):
 
-        onoff_list = self.get_onoff_list( tolerance = 1 )
+        try:
+            dat = np.genfromtxt( "logs/psrcal2continuum.log", dtype = 'str' )
+            p, c_on, c_off, m, c_m, fronts = dat[:, 0], dat[:, 1], dat[:, 2], dat[:, 3], dat[:, 4], dat[:, 5]
+        except OSError:
+            # Then make the table
 
-        a = []
+            on, off, frontend, date, _ = self.get_onoff_data( tolerance = 1 )
+            p, c_on, c_off, m, c_m, fronts = [], [], [], [], [], []
 
-        for directory in self.dirs:
-            for psr_file in sorted( os.listdir( directory ) ):
-
+            for psr_cal in sorted( os.listdir( os.getcwd() ) ):
                 mjd_list = []
-
                 try:
-                    hdul, psr_mjd, psr_fe, obs_num, obs_mode = self.hdul_setup( directory, psr_file )
-                    if self.verbose:
-                        print( "Opening {}".format( psr_file ) )
+                    psr_fe, psr_mjd = u.find_fe_mjd( psr_cal, "CAL" )
                 except OSError:
-                    if self.verbose:
-                        print( "Couldn't open {}".format( psr_file ) )
                     continue
 
-                psr_file = os.path.join( directory, psr_file )
+                if (psr_mjd == -1) or (psr_fe == -1):
+                    continue
 
-                if obs_mode == 'CAL':
-
-                    for dict in onoff_list:
-                        if dict[ 'FE' ] == psr_fe:
-                            delta_mjd = abs( dict[ 'MJD' ] - psr_mjd )
-                            if all( elem > delta_mjd for elem in mjd_list ):
-                                mjd_list.append( delta_mjd )
-                                if delta_mjd < mjd_tol:
-                                    on = os.path.join( self.cont_dir, dict[ 'ON' ] )
-                                    off = os.path.join( self.cont_dir, dict[ 'OFF' ] )
+                # Compare psr_cal file with continuum files
+                for cont_on, cont_off, cont_fe, cont_mjd in zip( on, off, frontend, date ):
+                    if cont_fe == psr_fe:
+                        delta_mjd = abs( int(cont_mjd) - psr_mjd )
+                        if all( elem > delta_mjd for elem in mjd_list ):
+                            mjd_list.append( delta_mjd )
+                            if delta_mjd < mjd_tol:
+                                continuum_on = str( os.path.join( self.cont_fits_dir, cont_on ) )
+                                continuum_off = str( os.path.join( self.cont_fits_dir, cont_off ) )
+                                if psr_cal in p:
+                                    pind = p.index( psr_cal )
+                                    if delta_mjd < abs( int(c_m[pind]) - psr_mjd ):
+                                        p[pind] = psr_cal
                                 else:
-                                    on, off = [None, None]
-                    a.append( [psr_file, on, off, psr_mjd] )
+                                    p.append( psr_cal )
+                                    m.append( psr_mjd )
+                                    c_m.append( cont_mjd )
+                                    c_on.append( continuum_on )
+                                    c_off.append( continuum_off )
+                                    fronts.append( psr_fe )
+                            else:
+                                continuum_on, continuum_off = None, None
 
-        return a
+            if self.verbose:
+                print( "Saving to logs/psrcal2continuum.log" )
 
+            with open( "logs/psrcal2continuum.log", "w" ) as f:
+                data = np.array( [ p, c_on, c_off, m, c_m, fronts ] ).T
+                np.savetxt( f, data, fmt="%s" )
 
-    def calculate_Jy_per_count( self, cal_file_list ):
-
-        """
-        Input list: [ PSR_CAL, ON_CAL, OFF_CAL, CAL_MJD ]
-
-        Returns:
-        conversion_factor  :  np.ndarray
-        """
-
-        G = 11.0
-
-        if type( cal_file_list ) != np.ndarray:
-            cal_file_list = np.array( cal_file_list )
-
-        if cal_file_list.ndim != 1:
-            raise ValueError( "Should be a vector" )
-
-        archives = []
-        freqs = []
-        for i, f in enumerate( cal_file_list[:-1] ):
-            hdul = fits.open( f )
-            freqs.append( hdul[3].data[ 'DAT_FREQ' ][0] )
-            hdul.close()
-            archives.append( Archive( f, prepare = False, verbose = self.verbose ) )
+        return p, c_on, c_off, m, c_m, fronts
 
 
-        aabb_list = []
+    def jpc( self, G = 11.0, **kwargs ):
 
-        for i, arc in enumerate( archives ):
-            arc.dedisperse( wcfreq = archives[i].wcfreq )
-            arc.center()
+        psr_cal, cont_on, cont_off, psr_mjd, cont_mjd, fe = self.closest_continuum2psrcal()
+        freq = self.ar.freq
 
-            arc.tscrunch()
-            A, B, C, D = self.convert_subint_pol_state( arc.getData(), arc.subintheader[ 'POL_TYPE' ], "AABBCRCI", linear = arc.header[ 'FD_POLN' ] )
-            l = { 'ARC' : arc, 'DATA' : [ A, B ], 'FREQS' : freqs[i], 'S_DUTY' : arc.getValue( 'CAL_PHS' ) , 'DUTY' : arc.getValue( 'CAL_DCYC' ), 'BW' : arc.getBandwidth() }
-            aabb_list.append( l )
+        inds = [i for i, n in enumerate( psr_mjd ) if int(n) == int(self.mjd)]
+        ind = None
+        for i in inds:
+            if fe[i] == self.fe:
+                ind = i
 
+        psr_ar = Archive( psr_cal[ind], prepare = False, verbose = False )
+        cont_on_ar = Archive( cont_on[ind], prepare = False, verbose = False )
+        cont_off_ar = Archive( cont_off[ind], prepare = False, verbose = False )
+
+        for ar in [ psr_ar, cont_on_ar, cont_off_ar ]:
+            ar.tscrunch()
+            #l = { 'ARC' : arc, 'DATA' : [ A, B ], 'FREQS' : freq[i], 'S_DUTY' : arc.getValue( 'CAL_PHS' ) , 'DUTY' : arc.getValue( 'CAL_DCYC' ), 'BW' : arc.getBandwidth() }
+
+        exit()
+
+        cal_fluxes = flux.get_fluxes( freq/1000, self.cont_name, **kwargs )
+        cont_on_level = 0
 
         H, L, T0 = self._prepare_calibration( aabb_list )
         F_ON = ( H[1]/L[1] ) - 1
@@ -166,7 +188,11 @@ class Cal():
         conversion_factor = [ np.array(Fa( aabb_list[0][ 'FREQS' ] ) / ( H[0][0] - L[0][0] )), np.array( Fb( aabb_list[0][ 'FREQS' ] ) / ( H[0][1] - L[0][1] ) ) ]
         conversion_factor = np.array( conversion_factor )
 
-        return conversion_factor
+        with open( "cal_factors.ascii", "w" ) as f:
+            data = np.array( [ freq, aa, bb, cr, ci ] ).T
+            np.savetxt( f, data )
+
+        return freq, aa, bb, cr, ci
 
 
     def _prepare_calibration( self, archive_list, r_err = 8 ):
@@ -311,48 +337,7 @@ class Cal():
 
         return self
 
-
-    def convert_subint_pol_state( self, subint, input, output, linear = 'LIN' ):
-
-        """
-
-        """
-
-        if input == output:
-            out_S = subint
-        elif input == "AABBCRCI" and output == "IQUV": # Coherence -> Stokes
-            A, B, C, D = subint
-            if linear == 'LIN':
-                I = A+B
-                Q = A-B
-                U = 2*C
-                V = 2*D
-            else:
-                I = A+B
-                Q = 2*C
-                U = 2*D
-                V = A-B
-            out_S = [ I, Q, U, V ]
-        elif input == "IQUV" and output == "AABBCRCI": # Stokes -> Coherence
-            I, Q, U, V = subint
-            if linear == 'LIN':
-                A = (I+Q)/2.0
-                B = (I-Q)/2.0
-                C = U/2.0
-                D = V/2.0
-            else:
-                A = (I+V)/2.0
-                B = (I-V)/2.0
-                C = Q/2.0
-                D = U/2.0
-            out_S = [ A, B, C, D ]
-        else:
-            print("WTF")
-
-
-        out_S = np.array( out_S )
-
-        return out_S
+    #def get_cal_levels( self,  )
 
 
     # Save as ASCII text file
@@ -370,6 +355,6 @@ class Cal():
 
 if __name__ == "__main__":
 
-
-
-    print("Under construction")
+    args = sys.argv[1:]
+    c = Cal( args[0], args[1], args[2] )
+    j = c.jpc( G = 11.0 )
