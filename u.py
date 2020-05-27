@@ -3,6 +3,7 @@
 # Imports
 import sys
 import os
+import subprocess
 import numpy as np
 from astropy.io import fits
 import inspect
@@ -12,6 +13,12 @@ import scipy.stats as spyst
 
 from pypulse.singlepulse import SinglePulse
 from physics import calculate_rms_matrix
+
+def run_cmd( cmd ):
+    proc = subprocess.Popen( cmd, stdout = subprocess.PIPE, shell = True )
+    (out, err) = proc.communicate()
+
+    return out, err
 
 def get_data_from_asc( asc_file ):
     data = np.loadtxt( asc_file )
@@ -204,6 +211,8 @@ def count_files( search_string, *dirs, verbose = True ):
             print( f"Total files found containing '{search_string}': {final_count}" )
     return total, final_count
 
+############# FIND FUNCTIONS ###############
+
 def find_frontend( file, obs = "PSR" ):
     try:
         hdul = fits.open( file )
@@ -217,10 +226,29 @@ def find_frontend( file, obs = "PSR" ):
         fe = hdul[0].header[ 'FRONTEND' ]
     except KeyError:
         hdul.close()
-        return -1, -1, -1, -1
+        return -1
     hdul.close()
 
     return fe
+
+def find_fe_mjd( file, obs = "PSR" ):
+    try:
+        hdul = fits.open( file )
+    except OSError:
+        return -1, -1
+    if hdul[0].header[ 'OBS_MODE' ] != obs:
+        hdul.close()
+        return -1, -1
+
+    try:
+        fe = hdul[0].header[ 'FRONTEND' ]
+        mjd = hdul[0].header[ 'STT_IMJD' ]
+    except KeyError:
+        hdul.close()
+        return -1, -1
+    hdul.close()
+
+    return fe, mjd
 
 def find_fe_mjd_ra_dec( file, obs = "PSR" ):
     try:
