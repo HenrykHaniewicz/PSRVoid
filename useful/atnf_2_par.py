@@ -3,9 +3,9 @@
 # Manchester, R. N., Hobbs, G. B., Teoh, A. and Hobbs, M., AJ, vol. 129, 1993-2006 (2005)
 
 import sys
-import atnf
+from atnf import ATNF
 
 if __name__ == "__main__":
 
-    psrs = sys.argv[1:]
-    atnf.make_pars( psrs )
+    atnf = ATNF( sys.argv[1:] )
+    atnf.psrs.make_pars()
