@@ -1,16 +1,10 @@
-# ATNF mining tools
-# Gets YMW16 distances from co-ordinates and DMs in the ATNF Catalog
-# Can also use methods to mine ATNF data
+# ATNF Catalog data mining class
 # Manchester, R. N., Hobbs, G. B., Teoh, A. and Hobbs, M., AJ, vol. 129, 1993-2006 (2005)
-# Must have YMW16 installed on local machine
-# Yao, Manchester and Wang, Astrophysical Journal, vol. 835 (2017)
 
 PLUS = '%2B'
 MINUS = '-'
 CNR = '+'
 
-import sys
-import os
 import requests
 from fake_useragent import UserAgent
 from bs4 import BeautifulSoup
@@ -20,13 +14,13 @@ class ATNF:
 
     def __init__( self, psrs ):
         self.psrs = psrs
-        self.url = self.ATNF_psr_srch()
+        self.url = self.ATNF_srch_url()
         self.param_table = self.ATNF_get_table()
         self.names = self.param_list( 'PSRJ' )
-        self.position = self.param_list( 'RA' )
+        self.position = self.param_list( 'RAJ' )
         self.dm = self.param_list( 'DM' )
 
-    def ATNF_psr_srch( self ):
+    def ATNF_srch_url( self ):
         psr_srch = ''
         for p in self.psrs:
             if '+' in p:
@@ -78,7 +72,7 @@ class ATNF:
 
         if param_key == 'DM':
             return get_DM_list()
-        if param_key == 'RA' or param_key == 'DEC':
+        if param_key == 'RAJ' or param_key == 'DECJ':
             return get_position()
 
         ind = [ i for i, s in enumerate( self.param_table ) if param_key in s ]

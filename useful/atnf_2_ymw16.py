@@ -15,7 +15,7 @@ if __name__ == "__main__":
     atnf = ATNF( sys.argv[1:] )
     psrs = atnf.psrs
 
-    for i in range(len(psrs)):
+    for i in range(len( psrs )):
         print( atnf.names[i] )
         cmd = f'radec2gal.pl {atnf.position[i]}'
         out, err = run_cmd( cmd )

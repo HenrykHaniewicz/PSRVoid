@@ -8,4 +8,4 @@ from atnf import ATNF
 if __name__ == "__main__":
 
     atnf = ATNF( sys.argv[1:] )
-    atnf.psrs.make_pars()
+    atnf.make_pars()

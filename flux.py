@@ -120,6 +120,13 @@ def get_flux( frequency, source, format1 = False ):
 
     return flux
 
+def get_fluxes( frequencies, source, **kwargs ):
+    fluxes = np.array([])
+    for f in frequencies:
+        flux = get_flux( f, source, **kwargs )
+
+    return fluxes
+
 
 if __name__ == "__main__":
 

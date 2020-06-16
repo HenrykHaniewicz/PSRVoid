@@ -13,6 +13,20 @@ import physics
 
 class Zap():
 
+    """
+    Master class for zapping data.
+    Requires:
+
+    file        -       .FITS (must be PSRFITS v5+ format)
+    template    -       ASCII format:       BIN#    Flux
+
+    Optional:
+
+    method      -       Either 'chauvenet', 'DMAD' or 'NN'
+    verbose     -       Prints more information to the console
+    **kwargs    -       Get parsed to plot.histogram_and_curves()
+    """
+
     def __init__( self, file, template, method = 'chauvenet', verbose = False, **kwargs ):
         self.file = file
         self.method = method
