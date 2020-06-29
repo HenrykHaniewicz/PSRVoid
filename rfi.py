@@ -2,14 +2,21 @@
 # New RFI excisor class
 # Saves as .ascii zap file
 
+#
 import sys
 import numpy as np
 from pypulse.archive import Archive
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+import pandas as pd
+from sklearn import preprocessing
+from sklearn.preprocessing import MinMaxScaler
+
+# Local imports
 import u
 import plot
 import physics
+from nn import NeuralNet
 
 class Zap():
 
@@ -18,23 +25,42 @@ class Zap():
     Requires:
 
     file        -       .FITS (must be PSRFITS v5+ format)
-    template    -       ASCII format:       BIN#    Flux
 
     Optional:
 
+    template    -       ASCII format:       BIN#    Flux           (Required if not doing NN exicison)
     method      -       Either 'chauvenet', 'DMAD' or 'NN'
     verbose     -       Prints more information to the console
-    **kwargs    -       Get parsed to plot.histogram_and_curves()
+    **kwargs    -       Get parsed to plot.histogram_and_curves() or
     """
 
-    def __init__( self, file, template, method = 'chauvenet', verbose = False, **kwargs ):
+    def __init__( self, file, template, method = 'chauvenet', nn_params = None, verbose = False, **kwargs ):
         self.file = file
         self.method = method
         self.verbose = verbose
         self.ar = Archive( file, verbose = False )
-        _, self.template = u.get_data_from_asc( template )
-        self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
-        self.omit, self.rms_mu, self.rms_sigma = self.get_omission_matrix( **kwargs )
+        if method != 'NN':
+            _, self.template = u.get_data_from_asc( template )
+            self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
+            self.omit, self.rms_mu, self.rms_sigma = self.get_omission_matrix( **kwargs )
+        elif nn_params != None:
+            df = pd.DataFrame( np.reshape( self.ar.getData(), (self.ar.getNsubint() * self.ar.getNchan(), self.ar.getNbin()) ) )
+            scaler = MinMaxScaler()
+            scaled_df = scaler.fit_transform( df.iloc[:, :] )
+            scaled_df = pd.DataFrame( scaled_df )
+            self.x = scaled_df.iloc[:, :].values.transpose()
+            self.nn = NeuralNet( self.x, np.array([[0], [0]]) )
+            self.nn.load_params( root = nn_params )
+            self.omit = self.nn_get_omission()
+            print(self.omit)
+        else:
+            sys.exit()
+
+    def nn_get_omission( self ):
+        pred = np.around( np.squeeze( self.nn.pred_data( self.x, True ) ), decimals = 0 ).astype(np.int)
+        pred = np.reshape( pred, ( self.ar.getNsubint(), self.ar.getNchan() ) )
+
+        return pred
 
 
     def get_omission_matrix( self, **kwargs ):
@@ -61,7 +87,7 @@ class Zap():
         with open( outfile, 'w' ) as f:
             for i, t in enumerate( self.omit ):
                 for j, rej in enumerate( t ):
-                    if rej == False:
+                    if rej == 0:
                         f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
         return outfile
 
@@ -83,5 +109,5 @@ if __name__ == "__main__":
 
     file, temp, method = check_args()
 
-    z = Zap( file, temp, method, verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 200] )
-    z.save( outroot = f"Zap/zap_{file}" )
+    z = Zap( file, temp, method, nn_params = "psr", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 200] )
+    z.save( outroot = f"Zap/zap_{file}", ext = '.nn.ascii' )

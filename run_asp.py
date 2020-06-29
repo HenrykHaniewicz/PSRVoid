@@ -14,7 +14,7 @@ def run( parfile, frontend, fscrunch_fac = 1, adddumps = None ):
         if adddumps:
             nsub = adddumps
         num = file[-9:-5]
-        os.system( f"ASPFitsReader -infile {file} -outroot 'NF/J1829+2456_{mjd}_{fe}_PUPPI_{num}' -nsubs {fscrunch_fac} -adddumps {nsub} -dedisp 0 -parfile {parfile} -zapfile Zap/zap_{file}.ascii" )
+        os.system( f"ASPFitsReader -infile {file} -outroot 'NF/J1829+2456_{mjd}_{fe}_PUPPI_{num}' -nsubs {fscrunch_fac} -adddumps {nsub} -dedisp 0 -parfile {parfile} -zapfile Zap/zap_{file}.nn.ascii" )
     return 0
 
 if __name__ == "__main__":

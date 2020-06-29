@@ -10,6 +10,9 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize as opt
+from sklearn import metrics
+from sklearn.metrics import confusion_matrix
+import itertools
 
 # Hard coded color list - what fun!
 color_list = [ 'r', 'g', 'b', 'c', 'y', 'm' ]
@@ -40,6 +43,26 @@ def plot_flux( source, frequency, format1 = False, show = False, **kwargs ):
         return 0
     else:
         return fluxes
+
+# Plots NN confusion matrix
+def plot_cf( a, b, t ):
+    cf = confusion_matrix( a, b )
+    plt.imshow( cf, cmap = plt.cm.Blues, interpolation = 'nearest', aspect = 'auto' )
+    plt.colorbar()
+    plt.title( t )
+    plt.xlabel( 'Predicted' )
+    plt.ylabel( 'Actual' )
+    tick_marks = np.arange( len( set(a) ) ) # length of classes
+    class_labels = ['0','1']
+    plt.xticks( tick_marks, class_labels )
+    plt.yticks( tick_marks, class_labels )
+    plt.ylim( 1.5, -0.5 )
+    thresh = cf.max() / 2.
+
+    for i, j in itertools.product( range( cf.shape[0] ), range( cf.shape[1] ) ):
+        plt.text( j, i, format( cf[i,j], 'd' ), horizontalalignment = 'center', verticalalignment = 'center', color = 'white' if cf[i, j] > thresh else 'black')
+    plt.tight_layout()
+    plt.show()
 
 
 def histogram_and_curves( array, mean = 0.0, std_dev = 1.0, bins = None, x_lims = None, y_lims = None, x_axis = 'X', y_axis = 'Y', title = 'Title', show = False, filename = None, curve_list = None, labels = None, **kwargs ):

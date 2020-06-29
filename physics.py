@@ -7,7 +7,7 @@ import scipy.stats
 import numpy as np
 from scipy.stats import rv_continuous
 
-import u
+#import u
 
 # PDF classes
 class test_dist( rv_continuous ):
@@ -62,11 +62,28 @@ def arr_reduced_mass( arr_m1, arr_m2 ):
             rm.append( reduced_mass( arr_m1[i], arr_m2[i] ) )
     return rm
 
+def sigmoid( Z ):
+    return 1/( 1 + np.exp( -Z ) )
 
+def relu( Z ):
+    return np.maximum( 0, Z )
+
+def drelu2( dZ, Z ):
+    dZ[Z <= 0] = 0
+    return dZ
+
+def drelu( x ):
+    x[x <= 0] = 0
+    x[x > 0] = 1
+    return x
+
+def dsigmoid( Z ):
+    s = 1/( 1 + np.exp( -Z ) )
+    dZ = s * ( 1 - s )
+    return dZ
 
 def rms( array ):
     return np.sqrt( np.mean( np.power( array, 2 ) ) )
-
 
 def calculate_rms_matrix( array, mask = None, mask_output = False ):
 
@@ -81,7 +98,7 @@ def calculate_rms_matrix( array, mask = None, mask_output = False ):
         r = []
         for i, prof in enumerate( array ):
             r.append( rms( prof[m == 0] ) )
-            u.display_status( i+1, len( array ) )
+            #u.display_status( i+1, len( array ) )
     elif array.ndim == 3:
         r = []
         i = 1
@@ -89,7 +106,7 @@ def calculate_rms_matrix( array, mask = None, mask_output = False ):
             sub = []
             for prof in subint :
                 sub.append( rms( prof[m == 0] ) )
-                u.display_status( i, len( array ) * len( subint ) )
+                #u.display_status( i, len( array ) * len( subint ) )
                 i += 1
             r.append( sub )
 
