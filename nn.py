@@ -24,8 +24,7 @@ class NeuralNet:
         self.X = x
         self.Y = y
         self.Yh = np.zeros( (1, self.Y.shape[1]) )
-        self.L = 2
-        self.dims = [10, 16, 16, 1]
+        self.dims = [len(x), 2, 1]
         self.param = {}
         self.ch = {}
         self.grad = {}
@@ -37,10 +36,9 @@ class NeuralNet:
 
     def seed_init( self ):
         np.random.seed(1)
-        self.param['W1'] = np.random.randn(self.dims[1], self.dims[0]) / np.sqrt(self.dims[0])
-        self.param['b1'] = np.zeros((self.dims[1], 1))
-        self.param['W2'] = np.random.randn(self.dims[2], self.dims[1]) / np.sqrt(self.dims[1])
-        self.param['b2'] = np.zeros((self.dims[2], 1))
+        for i in range( len( self.dims ) - 1 ):
+            self.param[f'W{i+1}'] = np.random.randn(self.dims[i+1], self.dims[i]) / np.sqrt(self.dims[i])
+            self.param[f'b{i+1}'] = np.zeros((self.dims[i+1], 1))
         return
 
     def feed_forward( self ):
@@ -48,13 +46,13 @@ class NeuralNet:
         A1 = relu(Z1)
         self.ch['Z1'], self.ch['A1'] = Z1, A1
 
-        Z2 = self.param['W2'].dot(A1) + self.param['b2']
-        A2 = sigmoid(Z2)
-        self.ch['Z2'], self.ch['A2'] = Z2, A2
+        for i in range( 2, len( self.dims ) ):
+            self.ch[ f'Z{i}' ] = self.param[ f'W{i}' ].dot(A1) + self.param[ f'b{i}' ]
+            self.ch[ f'A{i}' ] = sigmoid( self.ch[ f'Z{i}' ] )
 
-        self.Yh = A2
+        self.Yh = self.ch[ f'A{len( self.dims ) - 1}' ]
         try:
-            loss = self.nloss(A2)
+            loss = self.nloss( self.Yh )
         except ValueError:
             loss = None
         return self.Yh, loss
@@ -64,22 +62,25 @@ class NeuralNet:
         return loss
 
     def back_prop( self ):
-        dLoss_Yh = -( np.divide( self.Y, self.Yh ) - np.divide( 1 - self.Y, 1 - self.Yh ) )
+        dLoss_Z, dLoss_A, dLoss_W, dLoss_b = np.zeros( len( self.dims ) - 1, dtype = object ), np.zeros( len( self.dims ) - 1, dtype = object ), np.zeros( len( self.dims ) - 1, dtype = object ), np.zeros( len( self.dims ) - 1, dtype = object )
+        dLoss_A[-1] = -( np.divide( self.Y, self.Yh ) - np.divide( 1 - self.Y, 1 - self.Yh ) )
 
-        dLoss_Z2 = dLoss_Yh * dsigmoid( self.ch['Z2'] )
-        dLoss_A1 = np.dot( self.param["W2"].T, dLoss_Z2 )
-        dLoss_W2 = 1./self.ch['A1'].shape[1] * np.dot( dLoss_Z2, self.ch['A1'].T )
-        dLoss_b2 = 1./self.ch['A1'].shape[1] * np.dot( dLoss_Z2, np.ones( [dLoss_Z2.shape[1],1] ) )
+        for i in np.arange( len( self.dims ) - 2, 0, -1 ):
+            dLoss_Z[i] = dLoss_A[i] * dsigmoid( self.ch[ f'Z{i+1}' ] )
+            dLoss_A[i-1] = np.dot( self.param[ f'W{i+1}' ].T, dLoss_Z[i] )
+            dLoss_W[i] = 1./self.ch[ f'A{i}' ].shape[1] * np.dot( dLoss_Z[i], self.ch[ f'A{i}' ].T )
+            dLoss_b[i] = 1./self.ch[ f'A{i}' ].shape[1] * np.dot( dLoss_Z[i], np.ones( [dLoss_Z[i].shape[1], 1] ) )
 
-        dLoss_Z1 = dLoss_A1 * drelu( self.ch['Z1'] )
-        dLoss_A0 = np.dot( self.param["W1"].T, dLoss_Z1 )
+        dLoss_Z1 = dLoss_A[0] * drelu( self.ch[ f'Z1' ] )
+        dLoss_A0 = np.dot( self.param[ f'W1' ].T, dLoss_Z1 )
         dLoss_W1 = 1./self.X.shape[1] * np.dot( dLoss_Z1, self.X.T )
         dLoss_b1 = 1./self.X.shape[1] * np.dot( dLoss_Z1, np.ones( [dLoss_Z1.shape[1],1] ) )
 
-        self.param["W1"] = self.param["W1"] - self.lr * dLoss_W1
-        self.param["b1"] = self.param["b1"] - self.lr * dLoss_b1
-        self.param["W2"] = self.param["W2"] - self.lr * dLoss_W2
-        self.param["b2"] = self.param["b2"] - self.lr * dLoss_b2
+        self.param[ 'W1' ] = self.param[ 'W1' ] - self.lr * dLoss_W1
+        self.param[ 'b1' ] = self.param[ 'b1' ] - self.lr * dLoss_b1
+        for i in np.arange( 1, len( self.dims ) - 1 ):
+            self.param[ f'W{i+1}' ] = self.param[ f'W{i+1}' ] - self.lr * dLoss_W[i]
+            self.param[ f'b{i+1}' ] = self.param[ f'b{i+1}' ] - self.lr * dLoss_b[i]
 
         return
 
@@ -138,16 +139,14 @@ class NeuralNet:
         return
 
     def save_params( self, root = 'nn_params' ):
-        np.save( f'{root}.w1.nn.params', self.param["W1"] )
-        np.save( f'{root}.w2.nn.params', self.param["W2"] )
-        np.save( f'{root}.b1.nn.params', self.param["b1"] )
-        np.save( f'{root}.b2.nn.params', self.param["b2"] )
+        for i in range( len( self.dims ) - 1 ):
+            np.save( f'{root}.w{i+1}.nn.params', self.param[f'W{i+1}'] )
+            np.save( f'{root}.b{i+1}.nn.params', self.param[f'b{i+1}'] )
 
     def load_params( self, root = 'nn_params' ):
-        self.param["W1"] = np.load( f'{root}.w1.nn.params.npy' )
-        self.param["W2"] = np.load( f'{root}.w2.nn.params.npy' )
-        self.param["b1"] = np.load( f'{root}.b1.nn.params.npy' )
-        self.param["b2"] = np.load( f'{root}.b2.nn.params.npy' )
+        for i in range( len( self.dims ) - 1 ):
+            self.param[f'W{i+1}'] = np.load( f'{root}.w{i+1}.nn.params.npy' )
+            self.param[f'b{i+1}'] = np.load( f'{root}.b{i+1}.nn.params.npy' )
 
 def read_data( training, validation ):
 
@@ -178,16 +177,16 @@ def read_data( training, validation ):
 
 if __name__ == "__main__":
 
-    SAVE = True
+    SAVE = False
 
     training, validation = sys.argv[1], sys.argv[2]
     x, y, xv, yv = read_data( training, validation )
 
     # Start neural network
-    nn = NeuralNet( x, y, 0.006 )
+    nn = NeuralNet( x, y, 0.007 )
     nn.dims = [len(x), 20, 1]
     nn.threshold = 0.5
-    nn.gd( iter = 100000 )
+    nn.gd( iter = 20000 )
 
     pred_train = nn.pred_train( x, y, True )
     pred_valid = nn.pred_train( xv, yv, True )
@@ -203,4 +202,4 @@ if __name__ == "__main__":
     plot_cf( target, predicted, 'Validation Set' )
 
     if SAVE:
-        nn.save_params( root = 'psr' )
+        nn.save_params( root = 'NN/psr' )

@@ -88,7 +88,7 @@ def rms( array ):
 def calculate_rms_matrix( array, mask = None, mask_output = False ):
 
     if mask is None:
-        m = np.zeros( data.shape[-1] )
+        m = np.zeros( array.shape[-1] )
     else:
         m = mask
 

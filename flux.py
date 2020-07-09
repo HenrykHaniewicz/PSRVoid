@@ -3,6 +3,7 @@
 import os.path as osp
 import mmap
 import math
+import numpy as np
 import argparse
 
 config_file = 'fluxcal.cfg'
@@ -123,7 +124,7 @@ def get_flux( frequency, source, format1 = False ):
 def get_fluxes( frequencies, source, **kwargs ):
     fluxes = np.array([])
     for f in frequencies:
-        flux = get_flux( f, source, **kwargs )
+        fluxes = np.append( fluxes, get_flux( f, source, **kwargs ) )
 
     return fluxes
 

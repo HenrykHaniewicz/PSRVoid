@@ -3,15 +3,17 @@
 
 """
 Saves as ASCII, all values in Jy/count:         Freq (MHz)         AA          BB         CR         CI
-
-STILL UNDER CONSTRUCTION
 """
 
 import sys
 import os
 import numpy as np
+import math
 import flux
 import u
+from scipy import interpolate
+
+import matplotlib.pyplot as plt
 
 from pypulse.archive import Archive
 from astropy.io import fits
@@ -27,12 +29,13 @@ class Cal():
         self.cont_name = cont_name
         self.cont_fits_dir = cont_fits_dir
         self.verbose = verbose
-        self.ar = Archive( file, prepare = False, verbose = False )
+        # Change these to match filename format...
+        self.obs_num = file[-14:-10]
+        self.num = file[-9:-5]
+
+        self.ar = Archive( file, prepare = True, verbose = self.verbose )
         self.mjd = self.ar.getMJD()
         self.fe = self.ar.getFrontend()
-        #self.ar.dedisperse( wcfreq = self.ar.wcfreq )
-        #self.ar.center()
-        #self.jy_per_count = self.jpc( **kwargs )
 
 
     def get_onoff_data( self, tolerance = 1 ):
@@ -153,7 +156,7 @@ class Cal():
     def jpc( self, G = 11.0, **kwargs ):
 
         psr_cal, cont_on, cont_off, psr_mjd, cont_mjd, fe = self.closest_continuum2psrcal()
-        freq = self.ar.freq
+        freq = self.ar.freq[0]
 
         inds = [i for i, n in enumerate( psr_mjd ) if int(n) == int(self.mjd)]
         ind = None
@@ -165,30 +168,63 @@ class Cal():
         cont_on_ar = Archive( cont_on[ind], prepare = False, verbose = False )
         cont_off_ar = Archive( cont_off[ind], prepare = False, verbose = False )
 
+        cal_arc_list = []
+
+        np.set_printoptions( threshold = sys.maxsize )
         for ar in [ psr_ar, cont_on_ar, cont_off_ar ]:
             ar.tscrunch()
-            #l = { 'ARC' : arc, 'DATA' : [ A, B ], 'FREQS' : freq[i], 'S_DUTY' : arc.getValue( 'CAL_PHS' ) , 'DUTY' : arc.getValue( 'CAL_DCYC' ), 'BW' : arc.getBandwidth() }
+            fr = ar.freq[0]
+            data = ar.getData()
+            print(data.shape)
+            # The following commented lines are for when certain frequencies are missing
+            #if (ar is cont_on_ar) or (ar is cont_off_ar):
+                # if self.fe == '430':
+                #     data = np.delete( data, slice(48, 56), 1 )
+                #     fr = np.delete( fr, slice(48, 56), 0 )
+                # elif self.fe == 'lbw':
+                #     data = np.delete( data, slice(384, 448), 1 )
+                #     fr = np.delete( fr, slice(384, 448), 0 )
+                # if self.fe == '430':
+                #     for i in range(8):
+                #         data = np.insert( data, 48, np.zeros((2048)), axis = 1 )
+                #     fr = np.insert( fr, 48, np.linspace( 455.0, 467.5, 8, endpoint = False ), 0 )
+                # elif self.fe == 'lbw':
+                #     for i in range(64):
+                #         data = np.insert( data, 384, np.zeros((2048)), axis = 1 )
+                #     fr = np.insert( fr, 384, np.linspace( 1180.0, 1080.0, 64, endpoint = False ), 0 )
 
-        exit()
+            cal_arc_list.append( { 'ARC' : ar, 'DATA' : data, 'FREQS' : fr, 'S_DUTY' : ar.getValue( 'CAL_PHS' ) , 'DUTY' : ar.getValue( 'CAL_DCYC' ), 'BW' : ar.getBandwidth() } )
 
         cal_fluxes = flux.get_fluxes( freq/1000, self.cont_name, **kwargs )
-        cont_on_level = 0
 
-        H, L, T0 = self._prepare_calibration( aabb_list )
+        # Sometimes the calibration happens the opposite way, in which case this would be H, L
+        L, H = self._prepare_calibration( cal_arc_list )
+
+
         F_ON = ( H[1]/L[1] ) - 1
         F_OFF = ( H[2]/L[2] ) - 1
 
-        C0 = T0[1:] / ( ( 1 / F_ON ) - ( 1 / F_OFF ) )
+
+        C0 = cal_fluxes / ( ( 1 / F_ON ) - ( 1 / F_OFF ) )
         T_sys = C0 / F_OFF
         F_cal = ( T_sys * F_OFF ) / G
+        F_cal = np.nan_to_num( F_cal, nan = 0.0 )
 
+        # Plots F_cal if first file in series (for checking purposes)
+        #if self.num == '0001':
+        #    for f in F_cal:
+        #        plt.plot(f)
+        #    plt.show()
 
-        Fa, Fb = interp1d( aabb_list[1][ 'FREQS' ], F_cal[0][0], kind='cubic', fill_value = 'extrapolate' ), interp1d( aabb_list[2][ 'FREQS' ], F_cal[0][1], kind='cubic', fill_value = 'extrapolate' )
+        Fa, Fb = interpolate.interp1d( cal_arc_list[1][ 'FREQS' ], F_cal[0], kind = 'cubic', fill_value = 'extrapolate' ), interpolate.interp1d( cal_arc_list[2][ 'FREQS' ], F_cal[1], kind = 'cubic', fill_value = 'extrapolate' )
+        Fcr, Fci = interpolate.interp1d( cal_arc_list[1][ 'FREQS' ], F_cal[2], kind = 'cubic', fill_value = 'extrapolate' ), interpolate.interp1d( cal_arc_list[2][ 'FREQS' ], F_cal[3], kind = 'cubic', fill_value = 'extrapolate' )
 
-        conversion_factor = [ np.array(Fa( aabb_list[0][ 'FREQS' ] ) / ( H[0][0] - L[0][0] )), np.array( Fb( aabb_list[0][ 'FREQS' ] ) / ( H[0][1] - L[0][1] ) ) ]
-        conversion_factor = np.array( conversion_factor )
+        aa = Fa( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][0] - L[0][0] )
+        bb = Fb( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][1] - L[0][1] )
+        cr = Fcr( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][2] - L[0][2] )
+        ci = Fci( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][3] - L[0][3] )
 
-        with open( "cal_factors.ascii", "w" ) as f:
+        with open( f"Cal/{self.ar.getName()}_{self.fe}_{int(psr_mjd[ind])}_{self.obs_num}_{self.num}.cal", "w" ) as f:
             data = np.array( [ freq, aa, bb, cr, ci ] ).T
             np.savetxt( f, data )
 
@@ -199,21 +235,16 @@ class Cal():
 
         H = []
         L = []
-        T0 = []
 
         for dict in archive_list:
             all_high_means = []
             all_low_means = []
-            T0_pol = []
 
             for pol in dict[ 'DATA' ]:
                 high_means = []
                 low_means = []
-                T0_chan = []
 
                 for i, channel in enumerate( pol ):
-
-                    flux = getFlux( float( dict[ 'FREQS' ][i]/1000 ), self.cont_name, False )
 
                     start_bin = math.floor( len( channel ) * dict[ 'S_DUTY' ] )
                     mid_bin = math.floor( len( channel ) * ( dict[ 'S_DUTY' ] + dict[ 'DUTY' ] ) )
@@ -228,127 +259,17 @@ class Cal():
 
                     high_means.append( high_mean )
                     low_means.append( low_mean )
-                    T0_chan.append( flux )
 
                 all_high_means.append( high_means )
                 all_low_means.append( low_means )
-                T0_pol.append( T0_chan )
 
             H.append( all_high_means )
             L.append( all_low_means )
-            T0.append( T0_pol )
 
         H = np.array(H)
         L = np.array(L)
-        T0 = np.array(T0)
 
-        return H, L, T0
-
-
-    def calibrate( self ):
-
-        """
-        Master calibration method
-        """
-
-        conv_file = "{}_{}_fluxcalibration_conversion_factors.pkl".format( self.psr_name, self.cont_name )
-        cal_mjd_file = "{}_{}_fluxcalibration_cal_mjds.pkl".format( self.psr_name, self.cont_name )
-        conv_abs_path, cal_abs_path = os.path.join( self.pkl_dir, 'calibration', conv_file ), os.path.join( self.pkl_dir, 'calibration', cal_mjd_file )
-
-        if os.path.isfile( conv_abs_path ):
-            if self.verbose:
-                print( "Loading previously saved conversion factor data..." )
-            pickle_in = open( conv_abs_path, "rb" )
-            conversion_factors = pickle.load( pickle_in )
-            pickle_in.close()
-            pickle_in = open( cal_abs_path, "rb" )
-            cal_mjds = pickle.load( pickle_in )
-            pickle_in.close()
-        else:
-            if self.verbose:
-                print( "Making new conversion factor list..." )
-
-            conversion_factors = []
-            cal_mjds = []
-            for e in self.get_closest_contfile():
-                jpc = self.calculate_Jy_per_count( e )
-                conversion_factors.append( jpc )
-                cal_mjds.append( e[3] )
-
-            conversion_factors = np.array( conversion_factors )
-
-            if self.verbose:
-                print( "Saving as {}".format( conv_file ) )
-
-            pickle_out = open( conv_abs_path, "wb" )
-            pickle.dump( conversion_factors, pickle_out )
-            pickle_out.close()
-            pickle_out = open( cal_abs_path, "wb" )
-            pickle.dump( cal_mjds, pickle_out )
-            pickle_out.close()
-
-
-        if type( conversion_factors ) != np.ndarray:
-            conversion_factors = np.array( conversion_factors )
-        if type( cal_mjds ) != np.ndarray:
-            cal_mjds = np.array( cal_mjds )
-
-        print(conversion_factors)
-
-        counter = 0
-
-        for directory in self.dirs:
-            for psr_file in sorted( os.listdir( directory ) ):
-                try:
-                    hdul, psr_mjd, psr_fe, obs_num, obs_mode = self.hdul_setup( directory, psr_file, False )
-                    if self.verbose:
-                        print( "Opening {}".format( psr_file ) )
-                except OSError:
-                    if self.verbose:
-                        try:
-                            print( "Couldn't open {}".format( psr_file ) )
-                        except UnicodeEncodeError:
-                            print( "Couldn't open {}".format( psr_file.encode( "utf-8" ) ) )
-                    continue
-
-                if obs_mode != "PSR":
-                    continue
-
-                ar = Archive( os.path.join( directory, psr_file ), verbose = self.verbose )
-                data = ar.data_orig
-                new_data = []
-                for sub in data:
-                    A, B, C, D = self.convert_subint_pol_state( sub, ar.subintheader[ 'POL_TYPE' ], "AABBCRCI", linear = ar.header[ 'FD_POLN' ] )
-                    new_data.append( [ A, B ] )
-
-                new_data = np.array( new_data )
-
-
-                while psr_mjd != cal_mjds[ counter ]:
-                    print( psr_mjd, cal_mjds[ counter ] )
-                    counter += 1
-                    if counter >= len( conversion_factors ):
-                        break
-                else:
-                    for sub in new_data:
-                        sub = conversion_factors[ counter ] * sub
-                        print(sub.shape)
-                    counter = 0
-
-        return self
-
-    #def get_cal_levels( self,  )
-
-
-    # Save as ASCII text file
-    def save( self, outroot = "cal_out", ext = '.ascii' ):
-        outfile = outroot + ext
-        with open( outfile, 'w' ) as f:
-            for i, t in enumerate( self.omit ):
-                for j, rej in enumerate( t ):
-                    if rej == False:
-                        f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
-        return outfile
+        return H, L
 
 
 
@@ -356,5 +277,5 @@ class Cal():
 if __name__ == "__main__":
 
     args = sys.argv[1:]
-    c = Cal( args[0], args[1], args[2] )
-    j = c.jpc( G = 11.0 )
+    c = Cal( args[0], 'B1442', '../cont/', True )
+    freq, aa, bb, cr, ci = c.jpc( G = 11.0 )

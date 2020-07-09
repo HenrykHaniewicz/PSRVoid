@@ -69,7 +69,7 @@ if __name__ == "__main__":
         # Creates the profile / choice pairs and doubles up with the reciprocal profiles.
         p = np.append( profile, choice )
         inv_p = np.append( -1*profile, choice )
-        if (i+1) % 5 == 0:
+        if (i+1) % 6 == 0:
             with open( f'{psr}_{mjd}_{fe}_{n}.validation', 'a' ) as t:
                 np.savetxt( t, p, fmt = '%1.5f ', newline = '' )
                 t.write( "\n" )

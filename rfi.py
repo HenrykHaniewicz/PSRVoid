@@ -39,6 +39,7 @@ class Zap():
         self.method = method
         self.verbose = verbose
         self.ar = Archive( file, verbose = False )
+        self.ar.tscrunch()
         if method != 'NN':
             _, self.template = u.get_data_from_asc( template )
             self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
@@ -50,14 +51,16 @@ class Zap():
             scaled_df = pd.DataFrame( scaled_df )
             self.x = scaled_df.iloc[:, :].values.transpose()
             self.nn = NeuralNet( self.x, np.array([[0], [0]]) )
+            self.nn.dims = [ self.ar.getNbin(), 20, 1 ]
             self.nn.load_params( root = nn_params )
             self.omit = self.nn_get_omission()
+            np.set_printoptions( threshold = sys.maxsize )
             print(self.omit)
         else:
             sys.exit()
 
     def nn_get_omission( self ):
-        pred = np.around( np.squeeze( self.nn.pred_data( self.x, True ) ), decimals = 0 ).astype(np.int)
+        pred = np.around( np.squeeze( self.nn.pred_data( self.x, False ) ), decimals = 0 ).astype(np.int)
         pred = np.reshape( pred, ( self.ar.getNsubint(), self.ar.getNchan() ) )
 
         return pred
@@ -84,10 +87,10 @@ class Zap():
     # Save as ASCII text file
     def save( self, outroot = "zap_out", ext = '.ascii' ):
         outfile = outroot + ext
-        with open( outfile, 'w' ) as f:
+        with open( outfile, 'w+' ) as f:
             for i, t in enumerate( self.omit ):
                 for j, rej in enumerate( t ):
-                    if rej == 0:
+                    if rej == False:
                         f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
         return outfile
 
@@ -109,5 +112,5 @@ if __name__ == "__main__":
 
     file, temp, method = check_args()
 
-    z = Zap( file, temp, method, nn_params = "psr", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 200] )
-    z.save( outroot = f"Zap/zap_{file}", ext = '.nn.ascii' )
+    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 200] )
+    #z.save( outroot = f"Zap/zap_{file}", ext = '.nn.ascii' )
