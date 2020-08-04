@@ -36,7 +36,6 @@ def plot_flux( source, frequency, format1 = False, show = False, **kwargs ):
 
         ax.set_xlabel( r"Frequency (GHz)" )
         ax.set_ylabel( r"Flux (Jy)" )
-        ax.set_title( r"The change in flux (Jy) as a function of frequency (GHz)" )
         ax.plot( freqs, fluxes, **kwargs )
         plt.show()
         plt.close()
@@ -49,11 +48,11 @@ def plot_cf( a, b, t ):
     cf = confusion_matrix( a, b )
     plt.imshow( cf, cmap = plt.cm.Blues, interpolation = 'nearest', aspect = 'auto' )
     plt.colorbar()
-    plt.title( t )
+    plt.title(t)
     plt.xlabel( 'Predicted' )
     plt.ylabel( 'Actual' )
     tick_marks = np.arange( len( set(a) ) ) # length of classes
-    class_labels = ['0','1']
+    class_labels = [ '0', '1' ]
     plt.xticks( tick_marks, class_labels )
     plt.yticks( tick_marks, class_labels )
     plt.ylim( 1.5, -0.5 )
