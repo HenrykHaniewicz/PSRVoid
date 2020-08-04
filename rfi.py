@@ -91,6 +91,7 @@ class Zap():
                 for j, rej in enumerate( t ):
                     if rej == True:
                         f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
+                        #f.write( f'{k} {self.ar.freq[k][i]}\n' )
         return outfile
 
 
