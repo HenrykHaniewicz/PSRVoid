@@ -43,12 +43,15 @@ class NeuralNet:
 
     def feed_forward( self ):
         Z1 = self.param['W1'].dot(self.X) + self.param['b1']
-        A1 = relu(Z1)
+        A1 = relu(Z1) # Subject to change
         self.ch['Z1'], self.ch['A1'] = Z1, A1
 
-        for i in range( 2, len( self.dims ) ):
-            self.ch[ f'Z{i}' ] = self.param[ f'W{i}' ].dot(A1) + self.param[ f'b{i}' ]
-            self.ch[ f'A{i}' ] = sigmoid( self.ch[ f'Z{i}' ] )
+        for i in range( 2, len( self.dims ) - 1 ):
+            self.ch[ f'Z{i}' ] = self.param[ f'W{i}' ].dot(self.ch[ f'A{i-1}' ]) + self.param[ f'b{i}' ]
+            self.ch[ f'A{i}' ] = relu( self.ch[ f'Z{i}' ] )
+
+        self.ch[ f'Z{len( self.dims ) - 1}' ] = self.param[ f'W{len( self.dims ) - 1}' ].dot(self.ch[ f'A{len( self.dims ) - 2}' ]) + self.param[ f'b{len( self.dims ) - 1}' ]
+        self.ch[ f'A{len( self.dims ) - 1}' ] = sigmoid( self.ch[ f'Z{len( self.dims ) - 1}' ] )
 
         self.Yh = self.ch[ f'A{len( self.dims ) - 1}' ]
         try:
@@ -66,12 +69,16 @@ class NeuralNet:
         dLoss_A[-1] = -( np.divide( self.Y, self.Yh ) - np.divide( 1 - self.Y, 1 - self.Yh ) )
 
         for i in np.arange( len( self.dims ) - 2, 0, -1 ):
-            dLoss_Z[i] = dLoss_A[i] * dsigmoid( self.ch[ f'Z{i+1}' ] )
-            dLoss_A[i-1] = np.dot( self.param[ f'W{i+1}' ].T, dLoss_Z[i] )
+            if (i == len( self.dims ) - 2):
+                dLoss_Z[i] = dLoss_A[i] * dsigmoid( self.ch[ f'Z{i+1}' ] )
+                dLoss_A[i-1] = np.dot( self.param[ f'W{i+1}' ].T, dLoss_Z[i] )
+            else:
+                dLoss_Z[i] = dLoss_A[i] * drelu( self.ch[ f'Z{i+1}' ] )
+                dLoss_A[i-1] = np.dot( self.param[ f'W{i+1}' ].T, dLoss_Z[i] )
             dLoss_W[i] = 1./self.ch[ f'A{i}' ].shape[1] * np.dot( dLoss_Z[i], self.ch[ f'A{i}' ].T )
             dLoss_b[i] = 1./self.ch[ f'A{i}' ].shape[1] * np.dot( dLoss_Z[i], np.ones( [dLoss_Z[i].shape[1], 1] ) )
 
-        dLoss_Z1 = dLoss_A[0] * drelu( self.ch[ f'Z1' ] )
+        dLoss_Z1 = dLoss_A[0] * drelu( self.ch[ f'Z1' ] ) # Subject to change
         dLoss_A0 = np.dot( self.param[ f'W1' ].T, dLoss_Z1 )
         dLoss_W1 = 1./self.X.shape[1] * np.dot( dLoss_Z1, self.X.T )
         dLoss_b1 = 1./self.X.shape[1] * np.dot( dLoss_Z1, np.ones( [dLoss_Z1.shape[1],1] ) )
@@ -183,10 +190,10 @@ if __name__ == "__main__":
     x, y, xv, yv = read_data( training, validation )
 
     # Start neural network
-    nn = NeuralNet( x, y, 0.007 )
-    nn.dims = [len(x), 20, 1]
+    nn = NeuralNet( x, y, 0.01 )
+    nn.dims = [len(x), 16, 16, 1]
     nn.threshold = 0.5
-    nn.gd( iter = 20000 )
+    nn.gd( iter = 10000 )
 
     pred_train = nn.pred_train( x, y, True )
     pred_valid = nn.pred_train( xv, yv, True )

@@ -24,8 +24,8 @@ def load_archive( file, tscrunch = False ):
 
     ar = Archive( file, verbose = False )
     if tscrunch:
-        ar.tscrunch()
-        ar.imshow()
+        ar.tscrunch(nsubint = 32)
+        #ar.imshow()
     name = ar.getName()
     mjd = int(ar.getMJD())
     fe = ar.getFrontend()
@@ -52,7 +52,10 @@ if __name__ == "__main__":
     with open( f'{psr}_{mjd}_{fe}_{n}.validation', 'w' ) as t:
         t.write( f'# Validation set for {psr} taken on {mjd} at {fe}\n' )
 
-    for profile in d:
+    a = 24*32
+    b = 41*32
+
+    for profile in d[a:b]:
         print(i)
         plt.plot( profile, linewidth = 0.3, color = 'k' )
         plt.show( block = False )

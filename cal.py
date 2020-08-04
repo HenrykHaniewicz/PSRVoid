@@ -30,10 +30,10 @@ class Cal():
         self.cont_fits_dir = cont_fits_dir
         self.verbose = verbose
         # Change these to match filename format...
-        self.obs_num = file[-14:-10]
-        self.num = file[-9:-5]
+        self.obs_num = self.file[-14:-10]
+        self.num = self.file[-9:-5]
 
-        self.ar = Archive( file, prepare = True, verbose = self.verbose )
+        self.ar = Archive( self.file, prepare = True, verbose = self.verbose )
         self.mjd = self.ar.getMJD()
         self.fe = self.ar.getFrontend()
 
@@ -41,7 +41,7 @@ class Cal():
     def get_onoff_data( self, tolerance = 1 ):
 
         try:
-            dat = np.genfromtxt( "logs/on_off.log", dtype = 'str' )
+            dat = np.genfromtxt( "../logs/on_off.log", dtype = 'str' )
             on, off, frontend, date, n = dat[:, 0], dat[:, 1], dat[:, 2], dat[:, 3], dat[:, 4]
         except OSError:
             on, off, frontend, date, n = [], [], [], [], []
@@ -92,7 +92,7 @@ class Cal():
             if self.verbose:
                 print( "Saving to logs/on_off.log" )
 
-            with open( "logs/on_off.log", "w" ) as f:
+            with open( "../logs/on_off.log", "w" ) as f:
                 data = np.array( [ on, off, frontend, date, n ] ).T
                 np.savetxt( f, data, fmt="%s" )
 
@@ -102,7 +102,7 @@ class Cal():
     def closest_continuum2psrcal( self, mjd_tol = 50 ):
 
         try:
-            dat = np.genfromtxt( "logs/psrcal2continuum.log", dtype = 'str' )
+            dat = np.genfromtxt( "../logs/psrcal2continuum.log", dtype = 'str' )
             p, c_on, c_off, m, c_m, fronts = dat[:, 0], dat[:, 1], dat[:, 2], dat[:, 3], dat[:, 4], dat[:, 5]
         except OSError:
             # Then make the table
@@ -146,7 +146,7 @@ class Cal():
             if self.verbose:
                 print( "Saving to logs/psrcal2continuum.log" )
 
-            with open( "logs/psrcal2continuum.log", "w" ) as f:
+            with open( "../logs/psrcal2continuum.log", "w" ) as f:
                 data = np.array( [ p, c_on, c_off, m, c_m, fronts ] ).T
                 np.savetxt( f, data, fmt="%s" )
 
@@ -177,13 +177,18 @@ class Cal():
             data = ar.getData()
             print(data.shape)
             # The following commented lines are for when certain frequencies are missing
-            #if (ar is cont_on_ar) or (ar is cont_off_ar):
+            if (ar is cont_on_ar) or (ar is cont_off_ar):
                 # if self.fe == '430':
                 #     data = np.delete( data, slice(48, 56), 1 )
                 #     fr = np.delete( fr, slice(48, 56), 0 )
-                # elif self.fe == 'lbw':
-                #     data = np.delete( data, slice(384, 448), 1 )
-                #     fr = np.delete( fr, slice(384, 448), 0 )
+                if self.fe == 'lbw':
+                     data = np.delete( data, slice(0, 64), 1 )
+                     fr = np.delete( fr, slice(0, 64), 0 )
+                     data = np.delete( data, slice(192, 256), 1 )
+                     fr = np.delete( fr, slice(192, 256), 0 )
+                     data = np.delete( data, slice(256, 320), 1 )
+                     fr = np.delete( fr, slice(256, 320), 0 )
+                print(fr)
                 # if self.fe == '430':
                 #     for i in range(8):
                 #         data = np.insert( data, 48, np.zeros((2048)), axis = 1 )
@@ -211,10 +216,10 @@ class Cal():
         F_cal = np.nan_to_num( F_cal, nan = 0.0 )
 
         # Plots F_cal if first file in series (for checking purposes)
-        #if self.num == '0001':
-        #    for f in F_cal:
-        #        plt.plot(f)
-        #    plt.show()
+        if self.num == '0001':
+           for f in F_cal:
+               plt.plot(f)
+           plt.show()
 
         Fa, Fb = interpolate.interp1d( cal_arc_list[1][ 'FREQS' ], F_cal[0], kind = 'cubic', fill_value = 'extrapolate' ), interpolate.interp1d( cal_arc_list[2][ 'FREQS' ], F_cal[1], kind = 'cubic', fill_value = 'extrapolate' )
         Fcr, Fci = interpolate.interp1d( cal_arc_list[1][ 'FREQS' ], F_cal[2], kind = 'cubic', fill_value = 'extrapolate' ), interpolate.interp1d( cal_arc_list[2][ 'FREQS' ], F_cal[3], kind = 'cubic', fill_value = 'extrapolate' )
@@ -224,7 +229,7 @@ class Cal():
         cr = Fcr( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][2] - L[0][2] )
         ci = Fci( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][3] - L[0][3] )
 
-        with open( f"Cal/{self.ar.getName()}_{self.fe}_{int(psr_mjd[ind])}_{self.obs_num}_{self.num}.cal", "w" ) as f:
+        with open( f"../Cal/{self.ar.getName()}_{self.fe}_{int(psr_mjd[ind])}_{self.obs_num}_{self.num}.cal", "w" ) as f:
             data = np.array( [ freq, aa, bb, cr, ci ] ).T
             np.savetxt( f, data )
 

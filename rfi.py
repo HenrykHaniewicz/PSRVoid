@@ -39,7 +39,6 @@ class Zap():
         self.method = method
         self.verbose = verbose
         self.ar = Archive( file, verbose = False )
-        self.ar.tscrunch()
         if method != 'NN':
             _, self.template = u.get_data_from_asc( template )
             self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
@@ -74,7 +73,7 @@ class Zap():
         plot.histogram_and_curves( lin_rms, mean = mu, std_dev = sigma, bins = (self.ar.getNchan() * self.ar.getNsubint()) // 4, x_axis = 'Root Mean Squared', y_axis = 'Frequency Density', title = r'$M={},\ \sigma={}$'.format( mu, sigma ), **kwargs )
 
         if self.method == 'chauvenet':
-            rej_arr = physics.chauvenet( rms, median = mu, std_dev = sigma, threshold = 3 )
+            rej_arr = physics.chauvenet( rms, median = mu, std_dev = sigma, threshold = 2.5 )
         elif self.method == 'DMAD':
             rej_arr = physics.DMAD( lin_rms, threshold = 3.5 )
             rej_arr = np.reshape( rej_arr, ( self.ar.getNsubint(), self.ar.getNchan() ) )
@@ -90,7 +89,7 @@ class Zap():
         with open( outfile, 'w+' ) as f:
             for i, t in enumerate( self.omit ):
                 for j, rej in enumerate( t ):
-                    if rej == False:
+                    if rej == True:
                         f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
         return outfile
 
@@ -112,5 +111,5 @@ if __name__ == "__main__":
 
     file, temp, method = check_args()
 
-    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 200] )
-    #z.save( outroot = f"Zap/zap_{file}", ext = '.nn.ascii' )
+    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = True, show = True, curve_list = [norm.pdf], x_lims = [0, 500] )
+    z.save( outroot = f"../Zap/{file}", ext = '.zap' )

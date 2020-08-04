@@ -82,6 +82,7 @@ def dsigmoid( Z ):
     dZ = s * ( 1 - s )
     return dZ
 
+
 def rms( array ):
     return np.sqrt( np.mean( np.power( array, 2 ) ) )
 
@@ -150,6 +151,7 @@ def chauvenet( array, median = 0, std_dev = 1, threshold = 3.0 ):
 
     absDiff = abs( array - median )
 
+    # Output of 1 means bad channel
     return absDiff > ( threshold * std_dev )
 
 
