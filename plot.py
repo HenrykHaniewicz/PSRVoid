@@ -44,7 +44,7 @@ def plot_flux( source, frequency, format1 = False, show = False, **kwargs ):
         return fluxes
 
 # Plots NN confusion matrix
-def plot_cf( a, b, t ):
+def plot_cf( a, b, t, save = None ):
     cf = confusion_matrix( a, b )
     plt.imshow( cf, cmap = plt.cm.Blues, interpolation = 'nearest', aspect = 'auto' )
     plt.colorbar()
@@ -61,6 +61,8 @@ def plot_cf( a, b, t ):
     for i, j in itertools.product( range( cf.shape[0] ), range( cf.shape[1] ) ):
         plt.text( j, i, format( cf[i,j], 'd' ), horizontalalignment = 'center', verticalalignment = 'center', color = 'white' if cf[i, j] > thresh else 'black')
     plt.tight_layout()
+    if save != None:
+        plt.savefig( save, format = 'pdf' )
     plt.show()
 
 

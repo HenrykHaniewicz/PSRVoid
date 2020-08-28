@@ -25,8 +25,8 @@ def combine_sets( file1, file2, out = "combined_set.out", type = 't' ):
 
 if __name__ == "__main__":
 
-    o_t = f"nnset_{sys.argv[1][11:16]}_{sys.argv[2][11:16]}.training"
-    o_v = f"nnset_{sys.argv[1][11:16]}_{sys.argv[2][11:16]}.validation"
+    o_t = "J1829+2456_58402+58404+58406+58408_430_2048.training"
+    o_v = "J1829+2456_58402+58404+58406+58408_430_2048.validation"
 
     t1 = sys.argv[1] + ".training"
     v1 = sys.argv[1] + ".validation"

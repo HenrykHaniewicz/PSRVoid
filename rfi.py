@@ -7,6 +7,7 @@ import sys
 import numpy as np
 from pypulse.archive import Archive
 import matplotlib.pyplot as plt
+import matplotlib.colors as clr
 from scipy.stats import norm
 import pandas as pd
 from sklearn import preprocessing
@@ -39,6 +40,9 @@ class Zap():
         self.method = method
         self.verbose = verbose
         self.ar = Archive( file, verbose = False )
+        self.subs = self.ar.getNsubint()
+        self.tsc = 32
+        self.ar.tscrunch(nsubint = self.tsc)
         if method != 'NN':
             _, self.template = u.get_data_from_asc( template )
             self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
@@ -52,15 +56,24 @@ class Zap():
             self.nn = NeuralNet( self.x, np.array([[0], [0]]) )
             self.nn.dims = [ self.ar.getNbin(), 20, 1 ]
             self.nn.load_params( root = nn_params )
-            self.omit = self.nn_get_omission()
+            self.omit = self.nn_get_omission( show = True )
             np.set_printoptions( threshold = sys.maxsize )
             print(self.omit)
         else:
             sys.exit()
 
-    def nn_get_omission( self ):
-        pred = np.around( np.squeeze( self.nn.pred_data( self.x, False ) ), decimals = 0 ).astype(np.int)
+    def nn_get_omission( self, show = False ):
+        pred = np.around( np.squeeze( self.nn.pred_data( self.x ) ), decimals = 0 ).astype(np.int)
+        pred = np.array([x==1 for x in pred])
         pred = np.reshape( pred, ( self.ar.getNsubint(), self.ar.getNchan() ) )
+        pred = ~pred
+
+        if show:
+            fig = plt.figure( figsize = (7, 7) )
+            ax = fig.add_subplot(111)
+            ax.imshow( pred, cmap = plt.cm.Blues, aspect = 'auto' )
+            fig.colorbar( plt.cm.ScalarMappable( norm = clr.Normalize( vmin = 0, vmax = 1 ), cmap = plt.cm.Blues ), ax = ax )
+            plt.show()
 
         return pred
 
@@ -90,9 +103,45 @@ class Zap():
             for i, t in enumerate( self.omit ):
                 for j, rej in enumerate( t ):
                     if rej == True:
-                        f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
-                        #f.write( f'{k} {self.ar.freq[k][i]}\n' )
+                        #f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
+                        for k in range( 0 + i*(self.subs//self.tsc), (i+1)*(self.subs//self.tsc) ):
+                            f.write( f'{k} {self.ar.freq[k][j]}\n' )
         return outfile
+
+    def save_training( self, outroot = "gaussian_training" ):
+        tr_f, val_f = outroot + ".training", outroot + ".validation"
+        with open( tr_f, 'w' ) as t:
+            t.write( f'# Training set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
+        with open( val_f, 'w' ) as t:
+            t.write( f'# Validation set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
+
+        k = 0
+        for i, t in enumerate( self.ar.pscrunch().getData() ):
+            for j, prof in enumerate( t ):
+                if self.omit[i][j] == 1:
+                    p = np.append( prof, 0 )
+                    #inv_p = np.append( -1*prof, 0 )
+                elif self.omit[i][j] == 0:
+                    p = np.append( prof, 1 )
+                    #inv_p = np.append( -1*prof, 1 )
+                else:
+                    print( f"Rejection array returned nothing for {i},{j}. Skipping." )
+                    continue
+
+                if (k+1) % 6 == 0:
+                    with open( val_f, 'a' ) as t:
+                        np.savetxt( t, p, fmt = '%1.5f ', newline = '' )
+                        t.write( "\n" )
+                        #np.savetxt( t, inv_p, fmt = '%1.5f ', newline = '' )
+                        #t.write( "\n" )
+                else:
+                    with open( tr_f, 'a' ) as t:
+                        np.savetxt( t, p, fmt = '%1.5f ', newline = '' )
+                        t.write( "\n" )
+                        #np.savetxt( t, inv_p, fmt = '%1.5f ', newline = '' )
+                        #t.write( "\n" )
+                k += 1
+
 
 
 
@@ -112,5 +161,7 @@ if __name__ == "__main__":
 
     file, temp, method = check_args()
 
-    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = True, show = True, curve_list = [norm.pdf], x_lims = [0, 500] )
-    z.save( outroot = f"../Zap/{file}", ext = '.zap' )
+    #z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = True, show = True, curve_list = [norm.pdf], x_lims = [0, 20] )
+    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 50] )
+    #z.save( outroot = f"../Zap/{file[6:20]}_lbw_{file[-9:-5]}_2048", ext = '.zap' )
+    #z.save_training( outroot = f'{z.ar.getName()}_{int(z.ar.getMJD())}_{z.ar.getFrontend()}_{z.ar.getNbin()}' )

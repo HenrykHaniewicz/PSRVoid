@@ -68,19 +68,50 @@ def sigmoid( Z ):
 def relu( Z ):
     return np.maximum( 0, Z )
 
+def lrelu( Z, a = 0.1 ):
+    return np.maximum( a*Z, Z )
+
+def softmax( Z ):
+    exp = np.exp( Z - np.max(Z) )
+    s = np.sum( exp )
+    return np.divide( exp, s )
+
+def Swish( Z, b = 1 ):
+    return ( Z * sigmoid( b*Z ) )
+
 def drelu2( dZ, Z ):
     dZ[Z <= 0] = 0
     return dZ
 
-def drelu( x ):
-    x[x <= 0] = 0
-    x[x > 0] = 1
-    return x
+def drelu( Z ):
+    Z[Z <= 0] = 0
+    Z[Z > 0] = 1
+    return Z
+
+def dlrelu( Z, a = 0.1 ):
+    Z[Z < 0] = a
+    Z[Z > 0] = 1
+    return Z
+
 
 def dsigmoid( Z ):
     s = 1/( 1 + np.exp( -Z ) )
     dZ = s * ( 1 - s )
     return dZ
+
+def dtanh( Z ):
+    return ( 1 - (np.tanh(Z))**2 )
+
+def dsoftmax( Z ):
+    S = softmax( Z ).T
+    S_vector = np.reshape( S, (S.shape[0], 1) )
+    S_matrix = np.tile( S_vector, S.shape[0] )
+    dZ = np.diag(S_matrix) - ( S_matrix * np.transpose(S_matrix) )
+    return dZ
+
+def dSwish( Z, b = 1 ):
+    A = Swish( Z, b )
+    return ( A + ( sigmoid( Z ) * ( 1 - A ) ) )
 
 
 def rms( array ):
@@ -163,7 +194,7 @@ def DMAD( vector, threshold = 3.5 ):
     A return of True implies an outlying data point.
     '''
 
-    if vector.ndim != 1:
+    if vector.ndim is not 1:
         raise ValueError( "Input must be a 1D vector." )
 
     # Calculate the overall median (allows for masked vectors)
