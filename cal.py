@@ -99,7 +99,7 @@ class Cal():
         # Returns everything as iterables
         return on, off, frontend, date, n
 
-    def closest_continuum2psrcal( self, mjd_tol = 50 ):
+    def closest_continuum2psrcal( self, mjd_tol = 400 ):
 
         try:
             dat = np.genfromtxt( "../logs/psrcal2continuum.log", dtype = 'str' )
@@ -164,6 +164,7 @@ class Cal():
             if fe[i] == self.fe:
                 ind = i
 
+
         psr_ar = Archive( psr_cal[ind], prepare = False, verbose = False )
         cont_on_ar = Archive( cont_on[ind], prepare = False, verbose = False )
         cont_off_ar = Archive( cont_off[ind], prepare = False, verbose = False )
@@ -182,13 +183,16 @@ class Cal():
                 #     data = np.delete( data, slice(48, 56), 1 )
                 #     fr = np.delete( fr, slice(48, 56), 0 )
                 if self.fe == 'lbw':
-                     data = np.delete( data, slice(0, 64), 1 )
-                     fr = np.delete( fr, slice(0, 64), 0 )
-                     data = np.delete( data, slice(192, 256), 1 )
-                     fr = np.delete( fr, slice(192, 256), 0 )
-                     data = np.delete( data, slice(256, 320), 1 )
-                     fr = np.delete( fr, slice(256, 320), 0 )
-                print(fr)
+                    #
+                    #data = np.delete( data, slice(0, 64), 1 )
+                    #fr = np.delete( fr, slice(0, 64), 0 )
+                    #data = np.delete( data, slice(192, 256), 1 )
+                    #fr = np.delete( fr, slice(192, 256), 0 )
+                    data = np.delete( data, slice(256, 320), 1 )
+                    fr = np.delete( fr, slice(256, 320), 0 )
+                    #data = np.delete( data, slice(320, 384), 1 )
+                    #fr = np.delete( fr, slice(320, 384), 0 )
+                #print(fr)
                 # if self.fe == '430':
                 #     for i in range(8):
                 #         data = np.insert( data, 48, np.zeros((2048)), axis = 1 )
@@ -229,7 +233,7 @@ class Cal():
         cr = Fcr( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][2] - L[0][2] )
         ci = Fci( cal_arc_list[0][ 'FREQS' ] ) / ( H[0][3] - L[0][3] )
 
-        with open( f"../Cal/{self.ar.getName()}_{self.fe}_{int(psr_mjd[ind])}_{self.obs_num}_{self.num}.cal", "w" ) as f:
+        with open( f"../cal/{self.ar.getName()}_{self.fe}_{int(psr_mjd[ind])}_{self.obs_num}_{self.num}.cal", "w" ) as f:
             data = np.array( [ freq, aa, bb, cr, ci ] ).T
             np.savetxt( f, data )
 
@@ -282,5 +286,5 @@ class Cal():
 if __name__ == "__main__":
 
     args = sys.argv[1:]
-    c = Cal( args[0], 'B1442', '../cont/', True )
+    c = Cal( args[0], 'B1442', '../../J1829+2456/cont/', True )
     freq, aa, bb, cr, ci = c.jpc( G = 11.0 )

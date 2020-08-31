@@ -6,8 +6,8 @@
 import sys
 import numpy as np
 from pypulse.archive import Archive
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import matplotlib.colors as clr
 from scipy.stats import norm
 import pandas as pd
 from sklearn import preprocessing
@@ -37,16 +37,20 @@ class Zap():
 
     def __init__( self, file, template, method = 'chauvenet', nn_params = None, verbose = False, **kwargs ):
         self.file = file
+        if "cal" in self.file:
+            raise ValueError( f"File {self.file} is not in PSR format." )
+        elif "59071" in self.file:
+            raise ValueError( f"Not doing 59071..." )
         self.method = method
         self.verbose = verbose
         self.ar = Archive( file, verbose = False )
-        self.subs = self.ar.getNsubint()
-        self.tsc = 32
-        self.ar.tscrunch(nsubint = self.tsc)
         if method != 'NN':
             _, self.template = u.get_data_from_asc( template )
             self.opw = u.get_1D_OPW_mask( self.template, windowsize = 128 )
             self.omit, self.rms_mu, self.rms_sigma = self.get_omission_matrix( **kwargs )
+            unique, counts = np.unique( self.omit, return_counts = True )
+            print( f"Good channels: {100*(counts[0]/sum(counts)):.3f}%")
+            print( f"Bad channels: {100*(counts[1]/sum(counts)):.3f}%")
         elif nn_params != None:
             df = pd.DataFrame( np.reshape( self.ar.getData(), (self.ar.getNsubint() * self.ar.getNchan(), self.ar.getNbin()) ) )
             scaler = MinMaxScaler()
@@ -54,26 +58,20 @@ class Zap():
             scaled_df = pd.DataFrame( scaled_df )
             self.x = scaled_df.iloc[:, :].values.transpose()
             self.nn = NeuralNet( self.x, np.array([[0], [0]]) )
-            self.nn.dims = [ self.ar.getNbin(), 20, 1 ]
+            self.nn.dims = [ self.ar.getNbin(), 512, 10, 13, 8, 6, 6, 4, 4, 1 ]
+            self.nn.threshold = 0.5
             self.nn.load_params( root = nn_params )
-            self.omit = self.nn_get_omission( show = True )
+            self.omit = self.nn_get_omission()
             np.set_printoptions( threshold = sys.maxsize )
-            print(self.omit)
+            unique, counts = np.unique( self.omit, return_counts = True )
+            print( f"Good channels: {100*(counts[0]/sum(counts)):.3f}%")
+            print( f"Bad channels: {100*(counts[1]/sum(counts)):.3f}%")
         else:
             sys.exit()
 
-    def nn_get_omission( self, show = False ):
-        pred = np.around( np.squeeze( self.nn.pred_data( self.x ) ), decimals = 0 ).astype(np.int)
-        pred = np.array([x==1 for x in pred])
+    def nn_get_omission( self ):
+        pred = np.around( np.squeeze( self.nn.pred_data( self.x, False ) ), decimals = 0 ).astype(np.int)
         pred = np.reshape( pred, ( self.ar.getNsubint(), self.ar.getNchan() ) )
-        pred = ~pred
-
-        if show:
-            fig = plt.figure( figsize = (7, 7) )
-            ax = fig.add_subplot(111)
-            ax.imshow( pred, cmap = plt.cm.Blues, aspect = 'auto' )
-            fig.colorbar( plt.cm.ScalarMappable( norm = clr.Normalize( vmin = 0, vmax = 1 ), cmap = plt.cm.Blues ), ax = ax )
-            plt.show()
 
         return pred
 
@@ -86,7 +84,7 @@ class Zap():
         plot.histogram_and_curves( lin_rms, mean = mu, std_dev = sigma, bins = (self.ar.getNchan() * self.ar.getNsubint()) // 4, x_axis = 'Root Mean Squared', y_axis = 'Frequency Density', title = r'$M={},\ \sigma={}$'.format( mu, sigma ), **kwargs )
 
         if self.method == 'chauvenet':
-            rej_arr = physics.chauvenet( rms, median = mu, std_dev = sigma, threshold = 2.5 )
+            rej_arr = physics.chauvenet( rms, median = mu, std_dev = sigma, threshold = 2.0 )
         elif self.method == 'DMAD':
             rej_arr = physics.DMAD( lin_rms, threshold = 3.5 )
             rej_arr = np.reshape( rej_arr, ( self.ar.getNsubint(), self.ar.getNchan() ) )
@@ -96,6 +94,74 @@ class Zap():
 
         return rej_arr, mu, sigma
 
+    def plot_mask( self, **kwargs ):
+
+        fig = plt.figure( figsize = (7, 7) )
+        ax = fig.add_subplot(111)
+        ax.imshow( self.omit.T, cmap = plt.cm.gray, interpolation = 'nearest', aspect = 'auto' )
+        plt.show()
+
+    def save_training_set( self, val_size = 0.2 ):
+        # From Chauvenet or DMAD. 1 is bad channel
+
+        with open( f'{self.ar.getName()}_{int(self.ar.getMJD())}_{self.ar.getFrontend()}_{self.ar.getNbin()}.training', 'w' ) as t:
+            t.write( f'# Training set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
+        with open( f'{self.ar.getName()}_{int(self.ar.getMJD())}_{self.ar.getFrontend()}_{self.ar.getNbin()}.validation', 'w' ) as t:
+            t.write( f'# Validation set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
+
+        ps_0 = np.zeros(2049)[np.newaxis, :]
+        ps_1 = np.zeros(2049)[np.newaxis, :]
+
+        d = self.ar.getData().reshape( ( self.ar.getNchan() * self.ar.getNsubint(), self.ar.getNbin() ) )
+        omission = self.omit.reshape( ( self.ar.getNchan() * self.ar.getNsubint() ) )
+
+        i = 1
+        for omit, profile in zip( omission, d ):
+            try:
+                choice = int(omit)
+                if choice == 1:
+                    choice = 0
+                elif choice == 0:
+                    choice = 1
+            except ValueError:
+                choice = -1
+
+            print( i, end = '\r' )
+
+            if choice != -1:
+                # Creates the profile / choice pairs and doubles up with the reciprocal profiles.
+                p = np.append( profile, choice )
+                #inv_p = np.append( -1*profile, choice )
+                if choice == 0:
+                    ps_0 = np.append( ps_0, p[np.newaxis, :], axis = 0 )
+                else:
+                    ps_1 = np.append( ps_1, p[np.newaxis, :], axis = 0 )
+
+            i += 1
+
+        ps_0, ps_1 = np.delete( ps_0, 0, 0 ), np.delete( ps_1, 0, 0 )
+
+        # Sort into training / validation sets
+        train, validation = train_test_split( ps_0, test_size = val_size )
+        ones_t, ones_v = train_test_split( ps_1, test_size = val_size )
+        train, validation = np.append( train, ones_t, axis = 0 ), np.append( validation, ones_v, axis = 0 )
+
+        np.random.shuffle( train ), np.random.shuffle( validation )
+
+        for k in train:
+            with open( f'{self.ar.getName()}_{int(self.ar.getMJD())}_{self.ar.getFrontend()}_{self.ar.getNbin()}.training', 'a' ) as t:
+                np.savetxt( t, k, fmt = '%1.5f ', newline = '' )
+                t.write( "\n" )
+                #np.savetxt( t, inv_p, fmt = '%1.5f ', newline = '' )
+                #t.write( "\n" )
+
+        for k in validation:
+            with open( f'{self.ar.getName()}_{int(self.ar.getMJD())}_{self.ar.getFrontend()}_{self.ar.getNbin()}.validation', 'a' ) as t:
+                np.savetxt( t, k, fmt = '%1.5f ', newline = '' )
+                t.write( "\n" )
+
+
+
     # Save as ASCII text file
     def save( self, outroot = "zap_out", ext = '.ascii' ):
         outfile = outroot + ext
@@ -103,45 +169,9 @@ class Zap():
             for i, t in enumerate( self.omit ):
                 for j, rej in enumerate( t ):
                     if rej == True:
-                        #f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
-                        for k in range( 0 + i*(self.subs//self.tsc), (i+1)*(self.subs//self.tsc) ):
-                            f.write( f'{k} {self.ar.freq[k][j]}\n' )
+                        f.write( str(i) + " " + str(self.ar.freq[i][j]) + "\n" )
+                        #f.write( f'{k} {self.ar.freq[k][i]}\n' )
         return outfile
-
-    def save_training( self, outroot = "gaussian_training" ):
-        tr_f, val_f = outroot + ".training", outroot + ".validation"
-        with open( tr_f, 'w' ) as t:
-            t.write( f'# Training set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
-        with open( val_f, 'w' ) as t:
-            t.write( f'# Validation set for {self.ar.getName()} taken on {int(self.ar.getMJD())} at {self.ar.getFrontend()}\n' )
-
-        k = 0
-        for i, t in enumerate( self.ar.pscrunch().getData() ):
-            for j, prof in enumerate( t ):
-                if self.omit[i][j] == 1:
-                    p = np.append( prof, 0 )
-                    #inv_p = np.append( -1*prof, 0 )
-                elif self.omit[i][j] == 0:
-                    p = np.append( prof, 1 )
-                    #inv_p = np.append( -1*prof, 1 )
-                else:
-                    print( f"Rejection array returned nothing for {i},{j}. Skipping." )
-                    continue
-
-                if (k+1) % 6 == 0:
-                    with open( val_f, 'a' ) as t:
-                        np.savetxt( t, p, fmt = '%1.5f ', newline = '' )
-                        t.write( "\n" )
-                        #np.savetxt( t, inv_p, fmt = '%1.5f ', newline = '' )
-                        #t.write( "\n" )
-                else:
-                    with open( tr_f, 'a' ) as t:
-                        np.savetxt( t, p, fmt = '%1.5f ', newline = '' )
-                        t.write( "\n" )
-                        #np.savetxt( t, inv_p, fmt = '%1.5f ', newline = '' )
-                        #t.write( "\n" )
-                k += 1
-
 
 
 
@@ -161,7 +191,7 @@ if __name__ == "__main__":
 
     file, temp, method = check_args()
 
-    #z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = True, show = True, curve_list = [norm.pdf], x_lims = [0, 20] )
-    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = False, show = True, curve_list = [norm.pdf], x_lims = [0, 50] )
-    #z.save( outroot = f"../Zap/{file[6:20]}_lbw_{file[-9:-5]}_2048", ext = '.zap' )
-    #z.save_training( outroot = f'{z.ar.getName()}_{int(z.ar.getMJD())}_{z.ar.getFrontend()}_{z.ar.getNbin()}' )
+    z = Zap( file, temp, method, nn_params = "J1829+2456", verbose = True, show = True, curve_list = [norm.pdf], x_lims = [0, 500] )
+    z.plot_mask()
+    #z.save_training_set()
+    z.save( outroot = f"../zap/{file.split('.')[0]}", ext = '.zap' )

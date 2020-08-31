@@ -194,7 +194,7 @@ def DMAD( vector, threshold = 3.5 ):
     A return of True implies an outlying data point.
     '''
 
-    if vector.ndim is not 1:
+    if vector.ndim != 1:
         raise ValueError( "Input must be a 1D vector." )
 
     # Calculate the overall median (allows for masked vectors)
